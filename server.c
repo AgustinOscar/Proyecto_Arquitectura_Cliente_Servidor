@@ -7,7 +7,7 @@
         Asignatura: Arquitectura Cliente Servidor.
         Profesor: Ing. Carlos Alberto Román Zamitiz.
         Semestre: 2023-1.
-        Grupo: 2.
+        Grupo: 1.
 */
 
 //Strings y símbolos estándar.
@@ -34,126 +34,158 @@
 #include <limits.h>
 
 //Parámetros del servidor.
-#define SERV_PORT 8080               //Puerto del servidor.
-#define SERV_HOST_ADDR "127.0.0.1"   //IP del servidor.
-#define BUF_SIZE 100                 //Tamaño del buffer.
-#define BACKLOG 5                    //Número máximo de conexiones permitidas.
-#define QLEN 2
-
+#define NUM_CLIENTS 2    //Número de clientes que puede aceptar el servidor. (BACKLOG)
+#define BUF_RECV    100  //Cantidad de bytes que se pueden recibir.
+#define BUF_SEND    2048 //Cantidad de bytes que se pueden envíar.
 
 //Función principal.
 int main(int argc, char *argv[]){
-    /*
-    Necesitamos 2 filedescriptor ya que tendremos 2
-    estructuras sockaddr_in (una para el servidor y 
-    otra para la conexión del cliente).
-    */
-    int server_fd, cliente_fd;
+    
+    if ( argc != 2 ){ //Error.
+        printf("Debe ingresar el puerto por el cuál se ejecutará el socket del servidor.\n");
+        exit(0);
+    }
+
+    //File Descriptors.
+    int server_fd; //File descriptor del socket que abre la conexión (Servidor).
+    int client_fd; /*File descriptor del socket que se crea cuando un cliente se conecta. (Cliente).
+                     Con este fd podemos leer y envíar datos al cliente.*/
+
+    unsigned int len_client; /*Es un valor entero que se usará para guardar la longitud de la
+                               estructura del 'sockaddr_in' del cliente. */
 
     /*
-    Se crean las dos estructuras necesarias.
-    La primera llamada servidor que se le asociará el server_fd.
-    La segunda llamada cliente que se le asociará el cliente_fd.
+        Se crean las dos estructuras necesarias:
+        * La primera llamada servidor que se le asociará el server_fd.
+        * La segunda llamada cliente que se le asociará el client_fd.
     */
-    struct sockaddr_in servidor;    //Información sobre mi direccion (servidor).
-    struct sockaddr_in cliente;     //Información sobre la dirección del cliente.
-    struct hostent* info_cliente;   //Información del nodo remoto.
+    struct sockaddr_in server;   //Información sobre mi direccion (servidor).
+    struct sockaddr_in client;   //Información sobre la dirección del cliente.
+    struct hostent* info_client; //Información del nodo remoto.
 
-    //Tamaño del servidor y del cliente.
-    int sin_size_servidor;
-    int sin_size_cliente;
+    //Datos de envío y recepción.
+    int len_recv = 0; //Longitud de bytes recibidos.
+    int len_send = 0; //Longitus de bytes transmitidos.
 
-    //Longitud de la dirección del cliente.
-    int longClient;
+    char buff_recv[BUF_RECV]; //Bytes que lee el servidor por parte del cliente.
+    char buff_send[BUF_SEND]; //Bytes que envía el servidor al cliente.
 
-    //Se crea un socket (TCP/IPv4).
-    server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    //Bandera de comunicación.
+    int flag_com = 1;
 
-    if (server_fd == -1){
-        puts("Error al crear socket.");
+    //Creación del socket servidor.
+    server_fd = socket(AF_INET, SOCK_STREAM, 0); //Args: Dominio, Tipo de socket, Protocolo (0 es el de TCP).
+
+    if (server_fd == -1) {
+        printf("[SERVER-ERROR]: No se pudo crear el socket.\n");
         exit(1);
     }
 
-    else{
-        puts("Socket creado de manera exitosa.");
+    else {
+        printf("[SERVER]: Éxito, se creo el socket de manera satisfactoria.\n");
     }
-    
-    memset((char *) &servidor, 0, sizeof(servidor)); //Se limpia información de la estructura del servidor.
-    servidor.sin_family = AF_INET; //Asignamos tipo de IP (Familia).
-    servidor.sin_addr.s_addr = INADDR_ANY; //Asignamos dirección IP del servidor.
-    servidor.sin_port = htons((u_short) atoi(argv[1])); //Asignamos el puerto convirtiendo el string de entrada en el formato necesario.
-    memset(&(servidor.sin_zero), '\0', 8);
+
+    memset((char *) &server, 0, sizeof(server));      //Limpiamos la estructura del sockaddr_in.
+    server.sin_family = AF_INET;                      //Asignamos tipo de IP (Familia).
+    server.sin_addr.s_addr = INADDR_ANY;              //Asignamos dirección IP del servidor (cualquiera).
+    server.sin_port = htons((u_short) atoi(argv[1])); //Asignamos el puerto convirtiendo el string de entrada en el formato necesario.
+    memset(&(server.sin_zero), '\0', 8);
 
     //Asignamos la dirección IP y puerto al socket.
-    if ((bind(server_fd, (struct sockaddr *) &servidor, sizeof(servidor))) != 0 ){
-        fprintf(stderr, "[Servidor-Error]: Falló asifnación al socket.\n");
-        return -1;
+    if ((bind(server_fd, (struct sockaddr *) &server, sizeof(server))) != 0 ){
+        fprintf(stderr, "[SERVER-ERROR]: Falló asignación al socket.\n");
+        exit(1);
+    }
+
+    else {
+        printf("[SERVER]: La asignación de IP y puerto se realizó de manera existosa.\n");
     }
 
     //El socket se establece en modo pasivo (en escucha).
-    listen(server_fd, QLEN);
-
-    longClient = sizeof(cliente);
-
-    while (1){
-        break;
+    if (listen(server_fd, NUM_CLIENTS) != 0) {
+        printf("[SERVER-ERROR]: Error en el listen del socket.\n");
+        exit(1);
     }
 
+    else {
+        printf("[SERVER]: Socket a la escucha por el puerto: %d\n", ntohs(server.sin_port));
+    }
 
+    //Obtenemos la cantidad de bytes de la estructura cliente.
+    len_client = sizeof(client);
+
+    //Loop para aceptar conexiones de clientes.
+    while(1) {
+
+        puts("Servidor esperando una nueva conexión...\n");
+
+        //Se acepa una nueva conexión.
+        client_fd = accept(server_fd, (struct sockaddr *) &client, &len_client);
+
+        if(client_fd < 0){
+            printf("[SERVER-ERROR]: Conexión no aceptada.\n");
+            exit(1);
+        }
+
+        else{
+
+            puts("Nueva conexión recibida...\n");
+
+            do {
+                //Se lee el mensaje del cliente contenido en el buffer.
+                len_recv = recv(client_fd, buff_recv, sizeof(buff_recv), 0);
+
+                if(len_recv == -1){ //Error al leer comando.
+                    printf("[SERVER-ERROR]: El búfer no pudo ser leído.\n");
+                    close(client_fd);
+                    //exit(1);
+                }
+
+                else { //Lectura de comando exitosa.
+                    printf("[SERVER]: El comando leído es %s \n", buff_recv);
+                    printf("La cantidad de bytes leídos es: %d\n", len_recv);
+                    buff_recv[len_recv] = '\0';
+
+                    if (strcmp(buff_recv,"salir\n") == 0) {
+                        puts("Se ingresó la palabra clave de despedida.\n");
+                        //close(client_fd);
+                        //exit(0);
+                        break;
+                    }
+
+                    /*
+                        En este espacio se creará las funciones fork, pipe,
+                        switch (en caso de ser necesario), etc.
+
+                        La idea general es:
+                            1. Crear un nuevo proceso con fork.
+                            2. El proceso hijo se encargará de realizar
+                               la ejecución del comando y enviar el
+                               resultado a su padre por medio de un archivo.
+                                2.1 Se ejecuta la función exec ().
+                                2.2 Se almacena el resultado en un archivo.
+                                2.3 El resultado se le envía al padre.
+                            3. El padre envía el archivo al cliente.
+                    */
+
+                    printf("Ingresa la respuesta para el cliente: ");
+                    fgets(buff_send, LINE_MAX, stdin);
+                    printf("La respuesta para el cliente es: %s\n", buff_send);
+                    send( client_fd, buff_send, strlen(buff_send), 0 );
+
+                    //Se limpian los buffer.
+                    bzero(buff_recv, len_recv);
+                    bzero(buff_send, strlen(buff_send));
+                }
+            } while( strcmp(buff_recv,"salir\n") != 0 );
+
+            printf("Se ha cerrado la conexion con el cliente...\n");
+            close(client_fd);
+            //exit(0);
+        }
+    }
     close(server_fd);
     shutdown(server_fd, SHUT_RDWR);
     puts("Fin del programa...");
     exit(0);
 }
-
-//   // while(1)
-//   {
-//     fd_c = accept(fd_s, (struct sockaddr *) &cliente, &longClient);
-
-//     info_cliente = gethostbyaddr((char *) &cliente.sin_addr, sizeof(struct in_addr), AF_INET);
-//     /* Lo siguiente es para obtener la fecha y hora y se impriman en pantalla */
-//     time_t T = time(NULL);
-//     struct tm tm = *localtime(&T);
-//     printf("%02d/%02d/%04d %02d:%02d:%02d-Cliente conectado ", tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec);
-//     printf(" desde: %s\n\n", info_cliente -> h_name);
-
-//     if( fork() == 0 )
-//     {
-//       char buf_peticion[256];
-//       char buf_respuesta[256];
-//       /* el hijo no necesita el file descriptor del socket servidor,
-//       porque el no aceptara conexion de cliente, solo se comunica con el por lo que
-//       solo necesita el file descriptor del socket cliente */
-//       close( fd_s );
-//       // printf("0. buf_peticion=%s\n", buf_peticion);
-//       do
-//       {
-//         int n = recv(fd_c, buf_peticion, sizeof(buf_peticion), 0);
-//         // printf("2. longitud de buf_peticion=%d\n", strlen(buf_peticion));
-//         printf("3. El mensaje del cliente es %s\n", buf_peticion);
-//         buf_peticion[n] = '\0';
-//         // printf("strcmp(buf_peticion,\"adios\")=%d\n", strcmp(buf_peticion,"adios"));
-
-//         fgets(buf_respuesta, LINE_MAX, stdin);
-//         printf("El mensaje para cliente es %s\n", buf_respuesta);
-//         send( fd_c, buf_respuesta, strlen(buf_respuesta), 0 );
-//       }
-//       while( strcmp(buf_peticion,"adios\n") != 0 );
-//       printf("Se ha cerrado la conexion con el cliente... Este hijo termina\n");
-//       close(fd_c);
-//       exit( 0 );
-//     }
-//     else
-//     {
-//       /* El padre no necesita el file descriptor del socket cliente 
-//       porque el no se hablara con los clientes, los que lo haran son los hijos.
-//       Lo que si necesita el padre es mantener abierto el file descriptor del
-//       socket servidor porque en el sig ciclo del while llamara a la funcion
-//       accept() para aceptar a otro cliente */
-//       close( fd_c );
-//     }
-//   }
-//   close(fd_s);
-//   shutdown( fd_s, SHUT_RDWR );
-//   exit(0);
-// }
